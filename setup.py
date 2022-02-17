@@ -1,8 +1,9 @@
 import os
 
 from setuptools import find_packages, setup
+from pathlib import Path
 
-with open(os.path.join("stable_baselines3", "version.txt"), "r") as file_handler:
+with open(os.path.join(Path(__file__).parent.absolute(),"stable_baselines3", "version.txt"), "r") as file_handler:
     __version__ = file_handler.read().strip()
 
 
