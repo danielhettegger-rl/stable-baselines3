@@ -6,7 +6,7 @@ import torch as th
 from torch import nn
 
 from stable_baselines3.common.distributions import SquashedDiagGaussianDistribution, StateDependentNoiseDistribution
-from stable_baselines3.common.policies import BasePolicy, ContinuousCritic, register_policy
+from stable_baselines3.common.policies import BaseModel, BasePolicy, ContinuousCritic, register_policy
 from stable_baselines3.common.preprocessing import get_action_dim
 from stable_baselines3.common.torch_layers import (
     BaseFeaturesExtractor,
@@ -374,6 +374,73 @@ class SACPolicy(BasePolicy):
 MlpPolicy = SACPolicy
 
 
+class IPTSACPolicy(SACPolicy):
+    """
+    Policy Class for Interactive Policy Transfer (IPT) version of SAC.
+
+    Most Parameters are passed through to the SAC policy class.
+
+    :param observation_space: Observation space
+    :param action_space: Action space
+    :param lr_schedule: Learning rate schedule (could be constant)
+    :param net_arch: The specification of the policy and value networks.
+    :param activation_fn: Activation function
+    :param use_sde: Whether to use State Dependent Exploration or not
+    :param log_std_init: Initial value for the log standard deviation
+    :param sde_net_arch: Network architecture for extracting features
+        when using gSDE. If None, the latent features from the policy will be used.
+        Pass an empty list to use the states as features.
+    :param use_expln: Use ``expln()`` function instead of ``exp()`` when using gSDE to ensure
+        a positive standard deviation (cf paper). It allows to keep variance
+        above zero and prevent it from growing too fast. In practice, ``exp()`` is usually enough.
+    :param clip_mean: Clip the mean output when using gSDE to avoid numerical instability.
+    :param features_extractor_class: Features extractor to use.
+    :param features_extractor_kwargs: Keyword arguments
+        to pass to the features extractor.
+    :param normalize_images: Whether to normalize images or not,
+         dividing by 255.0 (True by default)
+    :param optimizer_class: The optimizer to use,
+        ``th.optim.Adam`` by default
+    :param optimizer_kwargs: Additional keyword arguments,
+        excluding the learning rate, to pass to the optimizer
+    :param n_critics: Number of critic networks to create.
+    :param share_features_extractor: Whether to share or not the features extractor
+        between the actor and the critic (this saves computation time)
+    :param teacher_policy: The policy, which is used to interactively guide the training process.
+    :param ipt_weight_schedule: The schedule for the weight of the teacher policy.
+    """
+
+    def __init__(
+        self,
+        observation_space: gym.spaces.Space,
+        action_space: gym.spaces.Space,
+        lr_schedule: Schedule,
+        teacher_policy: BaseModel = None, 
+        ipt_weight_schedule: Schedule = None,  
+        **kwargs
+    ):
+        super().__init__(observation_space, action_space, lr_schedule, **kwargs)
+        self.teacher_policy = teacher_policy
+        self.ipt_weight_schedule = ipt_weight_schedule
+        if ipt_weight_schedule is not None:
+            self.ipt_weight = ipt_weight_schedule(1)
+        else:
+            self.ipt_weight = 0.0
+    
+    def forward(self, obs: th.Tensor, deterministic: bool = False) -> th.Tensor:
+        return self._predict(obs, deterministic=deterministic)
+
+    def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
+        if self.ipt_weight == 0:
+            return self.actor(observation, deterministic)
+        agent_action = self.actor(observation, deterministic)
+        teacher_action = self.teacher_policy.forward(observation)
+        return self.ipt_weight * teacher_action + (1.0 - self.ipt_weight) * agent_action
+
+    def update_schedules(self, current_progress_remaining):
+        if self.ipt_weight_schedule is not None:
+            self.ipt_weight = self.ipt_weight_schedule(current_progress_remaining)
+
 class CnnPolicy(SACPolicy):
     """
     Policy class (with both actor and critic) for SAC.
@@ -517,5 +584,6 @@ class MultiInputPolicy(SACPolicy):
 
 
 register_policy("MlpPolicy", MlpPolicy)
+register_policy("IptMlpPolicy", IPTSACPolicy)
 register_policy("CnnPolicy", CnnPolicy)
 register_policy("MultiInputPolicy", MultiInputPolicy)

@@ -303,6 +303,10 @@ class BaseAlgorithm(ABC):
         for optimizer in optimizers:
             update_learning_rate(optimizer, self.lr_schedule(self._current_progress_remaining))
 
+        # Update any policy schedules as well
+        if callable(getattr(self.policy, 'update_schedules', None)):
+            self.policy.update_schedules(self._current_progress_remaining)
+
     def _excluded_save_params(self) -> List[str]:
         """
         Returns the names of the parameters that should be excluded from being
