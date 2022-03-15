@@ -435,7 +435,11 @@ class IPTSACPolicy(SACPolicy):
             return self.actor(observation, deterministic)
         agent_action = self.actor(observation, deterministic)
         teacher_action = self.teacher_policy.forward(observation)
-        return self.ipt_weight * teacher_action + (1.0 - self.ipt_weight) * agent_action
+        if not deterministic:
+            action = self.ipt_weight * teacher_action + (1.0 - self.ipt_weight) * agent_action
+        else:
+            action = agent_action
+        return action
 
     def update_schedules(self, current_progress_remaining):
         if self.ipt_weight_schedule is not None:
