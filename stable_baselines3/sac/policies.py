@@ -431,14 +431,23 @@ class IPTSACPolicy(SACPolicy):
         return self._predict(obs, deterministic=deterministic)
 
     def _predict(self, observation: th.Tensor, deterministic: bool = False) -> th.Tensor:
-        if self.ipt_weight == 0:
+        if self.ipt_weight == 0 or deterministic:
             return self.actor(observation, deterministic)
-        agent_action = self.actor(observation, deterministic)
+        
+        mean_actions, log_std, kwargs = self.actor.get_action_dist_params(observation)
+        
+        # Note: the action is squashed
+        actor_noise = self.actor.action_dist.actions_from_params(
+            th.zeros_like(mean_actions),
+            log_std,
+            deterministic=deterministic,
+            **kwargs
+        )
+
         teacher_action = self.teacher_policy.forward(observation)
-        if not deterministic:
-            action = self.ipt_weight * teacher_action + (1.0 - self.ipt_weight) * agent_action
-        else:
-            action = agent_action
+        
+        action = (self.ipt_weight * teacher_action + (1.0 - self.ipt_weight) * mean_actions) + actor_noise
+
         return action
 
     def update_schedules(self, current_progress_remaining):
